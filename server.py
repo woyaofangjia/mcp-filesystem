@@ -8,6 +8,7 @@ import os
 import sys
 import mimetypes
 import time
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -23,6 +24,7 @@ from src.mcp_project.services import (
     get_sandbox,
     get_sensitive_guard,
     get_permission_manager,
+    get_cache_manager,
     Role,
     ErrorCode,
     MCPError,
@@ -43,11 +45,17 @@ audit = get_audit_logger(db_path=os.path.join(LOG_DIR, "audit.db"))
 sandbox = get_sandbox(allowed_roots=[APP_ROOT])
 sensitive_guard = get_sensitive_guard()
 perm_manager = get_permission_manager(default_role=Role.ADMIN)
+cache_manager = get_cache_manager()
+
+# 并发控制：限制同时进行的文件操作数
+MAX_CONCURRENT_OPS = 20
+_ops_semaphore = asyncio.Semaphore(MAX_CONCURRENT_OPS)
 
 logger.info("服务初始化完成", {
     "app_root": APP_ROOT,
     "sandbox_roots": sandbox.roots,
     "log_dir": LOG_DIR,
+    "max_concurrent_ops": MAX_CONCURRENT_OPS,
 })
 
 # ============================================================
@@ -197,6 +205,78 @@ TOOLS = [
             "required": ["source", "destination"],
         },
     ),
+    # ============== 第二阶段：批量操作 ==============
+    types.Tool(
+        name="batch_read_files",
+        description="批量读取多个文件",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "文件路径列表",
+                },
+                "encoding": {
+                    "type": "string",
+                    "description": "文件编码（默认utf-8）",
+                    "default": "utf-8",
+                },
+            },
+            "required": ["paths"],
+        },
+    ),
+    types.Tool(
+        name="batch_delete_files",
+        description="批量删除多个文件（⚠️危险操作）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "文件路径列表",
+                },
+            },
+            "required": ["paths"],
+        },
+    ),
+    # ============== 第二阶段：大文件支持 ==============
+    types.Tool(
+        name="read_file_chunked",
+        description="分块读取大文件",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径"},
+                "chunk_size": {
+                    "type": "integer",
+                    "description": "每块字节数（默认1MB）",
+                    "default": 1048576,
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "起始偏移量（字节）",
+                    "default": 0,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "最大读取字节数（默认10MB）",
+                    "default": 10485760,
+                },
+            },
+            "required": ["path"],
+        },
+    ),
+    # ============== 第二阶段：缓存统计 ==============
+    types.Tool(
+        name="cache_stats",
+        description="获取缓存统计信息",
+        input_schema={
+            "type": "object",
+            "properties": {},
+        },
+    ),
 ]
 
 # ============================================================
@@ -285,6 +365,11 @@ async def handle_call_tool(
             "delete_file": "delete",
             "copy_file": "write",
             "move_file": "write",
+            # 第二阶段新增
+            "batch_read_files": "read",
+            "batch_delete_files": "delete",
+            "read_file_chunked": "read",
+            "cache_stats": "read",
         }
         action = action_map.get(tool_name, "read")
         for path in resource_paths:
@@ -311,6 +396,11 @@ async def handle_call_tool(
             "search_files": handle_search_files,
             "copy_file": handle_copy_file,
             "move_file": handle_move_file,
+            # 第二阶段新增
+            "batch_read_files": handle_batch_read_files,
+            "batch_delete_files": handle_batch_delete_files,
+            "read_file_chunked": handle_read_file_chunked,
+            "cache_stats": handle_cache_stats,
         }
 
         handler = handlers[tool_name]
@@ -380,9 +470,15 @@ def _tool_exists(name: str) -> bool:
 def _extract_paths(tool_name: str, args: Dict[str, Any]) -> List[str]:
     """从参数中提取所有文件路径"""
     paths: List[str] = []
+    # 单路径参数
     for key in ("path", "source", "destination", "directory"):
         if key in args and args[key]:
             paths.append(str(args[key]))
+    # 批量操作的路径数组
+    if "paths" in args and isinstance(args["paths"], list):
+        for p in args["paths"]:
+            if p:
+                paths.append(str(p))
     return paths
 
 
@@ -787,6 +883,199 @@ async def handle_move_file(
                 text=f"已移动: {source} → {destination}",
             )
         ]
+    )
+
+
+# ============================================================
+# 第二阶段：批量操作 & 大文件支持
+# ============================================================
+
+
+async def handle_batch_read_files(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """批量读取文件"""
+    paths = arguments.get("paths", [])
+    encoding = arguments.get("encoding", "utf-8")
+
+    if not paths:
+        raise MCPError(ErrorCode.MISSING_PARAMS, detail="paths 不能为空")
+
+    results = []
+    success_count = 0
+    fail_count = 0
+
+    async def read_one(p: str) -> dict:
+        try:
+            resolved = _resolve_path(p)
+            path_obj = Path(resolved)
+
+            if not path_obj.exists():
+                return {"path": p, "status": "error", "error": "文件不存在"}
+
+            # 尝试从缓存获取
+            cached = cache_manager.get_content(p)
+            if cached is not None:
+                return {"path": p, "status": "cached", "content": cached[:500] + "..."}
+
+            # 实际读取
+            content = _read_text_file(path_obj, encoding)
+            # 写入缓存
+            cache_manager.set_content(p, content)
+            return {"path": p, "status": "success", "content": content[:500] + "..."}
+        except Exception as e:
+            return {"path": p, "status": "error", "error": str(e)}
+
+    # 并发读取（使用信号量控制）
+    tasks = []
+    for p in paths:
+        async with _ops_semaphore:
+            tasks.append(read_one(p))
+
+    results_list = await asyncio.gather(*tasks)
+
+    for r in results_list:
+        results.append(r)
+        if r["status"] in ("success", "cached"):
+            success_count += 1
+        else:
+            fail_count += 1
+
+    summary = f"批量读取完成: {success_count} 成功, {fail_count} 失败\n\n"
+    details = []
+    for r in results:
+        if r["status"] == "success":
+            details.append(f"[OK] {r['path']}")
+        elif r["status"] == "cached":
+            details.append(f"[CACHED] {r['path']}")
+        else:
+            details.append(f"[FAIL] {r['path']}: {r['error']}")
+
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=summary + "\n".join(details))]
+    )
+
+
+async def handle_batch_delete_files(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """批量删除文件"""
+    paths = arguments.get("paths", [])
+
+    if not paths:
+        raise MCPError(ErrorCode.MISSING_PARAMS, detail="paths 不能为空")
+
+    results = []
+    success_count = 0
+    fail_count = 0
+
+    for p in paths:
+        try:
+            resolved = _resolve_path(p)
+            path_obj = Path(resolved)
+
+            if not path_obj.exists():
+                results.append({"path": p, "status": "skipped", "reason": "不存在"})
+                continue
+
+            if path_obj.is_file():
+                path_obj.unlink()
+            elif path_obj.is_dir():
+                import shutil
+                shutil.rmtree(path_obj)
+
+            # 失效缓存
+            cache_manager.invalidate(p)
+            results.append({"path": p, "status": "success"})
+            success_count += 1
+        except Exception as e:
+            results.append({"path": p, "status": "error", "error": str(e)})
+            fail_count += 1
+
+    summary = f"批量删除完成: {success_count} 成功, {fail_count} 失败\n\n"
+    details = []
+    for r in results:
+        if r["status"] == "success":
+            details.append(f"[DELETED] {r['path']}")
+        elif r["status"] == "skipped":
+            details.append(f"[SKIPPED] {r['path']}: {r['reason']}")
+        else:
+            details.append(f"[FAIL] {r['path']}: {r['error']}")
+
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=summary + "\n".join(details))]
+    )
+
+
+async def handle_read_file_chunked(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """分块读取大文件"""
+    path = arguments["path"]
+    chunk_size = arguments.get("chunk_size", 1048576)  # 1MB
+    offset = arguments.get("offset", 0)
+    limit = arguments.get("limit", 10485760)  # 10MB
+
+    resolved = _resolve_path(path)
+    path_obj = Path(resolved)
+
+    if not path_obj.exists():
+        raise MCPError(ErrorCode.FILE_NOT_FOUND, detail=f"文件不存在: {path}")
+    if not path_obj.is_file():
+        raise MCPError(ErrorCode.INVALID_PATH, detail=f"路径不是文件: {path}")
+
+    file_size = path_obj.stat().st_size
+    if offset >= file_size:
+        raise MCPError(ErrorCode.INVALID_PARAMS, detail=f"offset {offset} 超出文件大小 {file_size}")
+
+    # 调整限制
+    bytes_to_read = min(limit, file_size - offset)
+
+    try:
+        with open(path_obj, "rb") as f:
+            f.seek(offset)
+            data = f.read(bytes_to_read)
+
+        # 尝试解码为文本
+        try:
+            text = data.decode("utf-8")
+            content_preview = text[:1000]
+        except UnicodeDecodeError:
+            content_preview = f"<二进制数据, {len(data)} 字节>"
+
+        return types.CallToolResult(
+            content=[
+                types.TextContent(
+                    type="text",
+                    text=f"文件: {path}\n"
+                    f"大小: {file_size} 字节\n"
+                    f"读取范围: {offset}-{offset+bytes_to_read} ({bytes_to_read} 字节)\n\n"
+                    f"内容预览:\n{content_preview}",
+                )
+            ]
+        )
+    except OSError as e:
+        raise MCPError(ErrorCode.READ_ERROR, detail=f"读取失败: {e}")
+
+
+async def handle_cache_stats(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """获取缓存统计"""
+    stats = cache_manager.stats()
+
+    lines = ["缓存统计信息:", ""]
+    for cache_type, data in stats.items():
+        lines.append(f"=== {cache_type} ===")
+        for key, value in data.items():
+            if key == "size_bytes" or key == "max_size_bytes":
+                lines.append(f"  {key}: {value / 1024 / 1024:.2f} MB")
+            else:
+                lines.append(f"  {key}: {value}")
+        lines.append("")
+
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text="\n".join(lines))]
     )
 
 

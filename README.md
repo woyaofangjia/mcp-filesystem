@@ -6,9 +6,10 @@
 
 - 🔒 **安全加固**：路径沙箱、RBAC权限、敏感文件守卫、操作审计
 - 📝 **结构化日志**：JSON分级日志 + 文件轮转 + SQLite审计追踪
-- ⚡ **8个工具**：list_directory、read_file、write_file、delete_file、get_file_info、search_files、copy_file、move_file
+- ⚡ **12个工具**：批量操作、分块读取、缓存统计
 - 🛡️ **安全防护**：自动阻止路径遍历、敏感文件访问、越权操作
 - 📊 **可观测性**：所有操作可追溯，含trace_id追踪
+- 🚀 **性能优化**：LRU缓存、并发控制（最大20并发）、分块传输
 
 ## 安装
 
@@ -55,6 +56,10 @@ asyncio.run(test())
 | `search_files` | 按文件名或内容搜索 | 只读 |
 | `copy_file` | 复制文件或目录 | 写入 |
 | `move_file` | 移动或重命名文件 | 写入 |
+| **`batch_read_files`** | 🆕 批量读取多个文件，支持缓存 | 只读 |
+| **`batch_delete_files`** | 🆕 批量删除多个文件 | ⚠️ 危险 |
+| **`read_file_chunked`** | 🆕 分块读取大文件（支持offset/limit） | 只读 |
+| **`cache_stats`** | 🆕 查看缓存命中率和统计信息 | 只读 |
 
 ## 安全机制
 
@@ -107,7 +112,8 @@ mcp-project/
 │   │   ├── sandbox.py            # 路径沙箱
 │   │   ├── sensitive.py          # 敏感文件守卫
 │   │   ├── permissions.py        # RBAC权限控制
-│   │   └── errors.py             # 结构化错误处理
+│   │   ├── errors.py             # 结构化错误处理
+│   │   └── cache.py              # 🆕 LRU缓存管理
 │   └── __init__.py
 ├── logs/                         # 运行时日志（gitignore）
 │   ├── filesystem-mcp.log
@@ -152,7 +158,11 @@ asyncio.run(main())
 
 ## 开发说明
 
-当前版本 V2.0，已完成第一阶段安全加固。后续将按 [roadmap.md](docs/roadmap.md) 进行性能优化和功能扩展。
+当前版本 V3.0，已完成：
+- ✅ 第一阶段：安全加固、日志、审计、错误处理
+- ✅ 第二阶段：LRU缓存、批量操作、并发控制、分块读取
+
+后续将按 [roadmap.md](docs/roadmap.md) 进行第三阶段功能扩展和第四阶段企业级特性开发。
 
 ## 许可证
 

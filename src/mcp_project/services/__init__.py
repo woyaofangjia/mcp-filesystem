@@ -11,6 +11,7 @@ from .errors import (
     with_timeout,
     classify_error,
 )
+from .cache import FileCacheManager, get_cache_manager, LRUCache
 
 __all__ = [
     "get_logger", "Logger",
@@ -19,4 +20,5 @@ __all__ = [
     "SensitiveFileGuard", "get_sensitive_guard",
     "PermissionManager", "get_permission_manager", "Role",
     "ErrorCode", "MCPError", "error_result", "with_retry", "with_timeout", "classify_error",
+    "FileCacheManager", "get_cache_manager", "LRUCache",
 ]

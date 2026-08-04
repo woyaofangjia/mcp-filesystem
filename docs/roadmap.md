@@ -19,18 +19,19 @@
 | 分级日志系统 | ✅ 已完成 | 🔴 高 | `services/logger.py` |
 | 日志持久化 | ✅ 已完成 | 🟡 中 | `services/logger.py` (RotatingFileHandler) |
 
-### 第二阶段：性能优化
+### 第二阶段：性能优化 ✅ 已完成
 **目标**: 异步处理、缓存、大文件支持
 
-| 任务 | 状态 | 优先级 | 文档 |
-|------|------|--------|------|
-| 异步IO改造 | ⬜ 待开始 | 🔴 高 | [performance.md](performance.md#1-异步处理) |
-| 并发控制 | ⬜ 待开始 | 🔴 高 | [performance.md](performance.md#1-异步处理) |
-| LRU内存缓存 | ⬜ 待开始 | 🔴 高 | [performance.md](performance.md#2-缓存机制) |
-| 文件内容缓存 | ⬜ 待开始 | 🟡 中 | [performance.md](performance.md#2-缓存机制) |
-| 缓存失效策略 | ⬜ 待开始 | 🟡 中 | [performance.md](performance.md#2-缓存机制) |
-| 批量操作支持 | ⬜ 待开始 | 🟡 中 | [performance.md](performance.md#3-批量操作) |
-| 分块读写 | ⬜ 待开始 | 🟡 中 | [performance.md](performance.md#4-大文件支持) |
+| 任务 | 状态 | 优先级 | 实现文件 |
+|------|------|--------|----------|
+| 异步IO改造 | ✅ 已完成 | 🔴 高 | `server.py` (asyncio.Semaphore) |
+| 并发控制 | ✅ 已完成 | 🔴 高 | `_ops_semaphore` (MAX_CONCURRENT_OPS=20) |
+| LRU内存缓存 | ✅ 已完成 | 🔴 高 | `services/cache.py` |
+| 文件内容缓存 | ✅ 已完成 | 🟡 中 | `FileCacheManager` (max 50MB) |
+| 缓存失效策略 | ✅ 已完成 | 🟡 中 | `mtime` 自动检测 |
+| 批量操作支持 | ✅ 已完成 | 🟡 中 | `batch_read_files`, `batch_delete_files` |
+| 分块读写 | ✅ 已完成 | 🟡 中 | `read_file_chunked` |
+| 缓存统计 | ✅ 已完成 | 🟡 中 | `cache_stats` 工具 |
 
 ### 第三阶段：功能扩展
 **目标**: 高级文件操作、内容分析、搜索增强

@@ -6,8 +6,8 @@
 
 基于 MCP 2.0.0 的企业级文件操作服务，为LLM客户端提供标准化文件管理能力。
 
-- **当前**: V2.0（第一阶段：安全加固 ✅）
-- **目标**: V3.0（性能优化 + 功能扩展）
+- **当前**: V3.0（第二阶段：性能优化 ✅）
+- **目标**: V4.0（功能扩展 + 企业级特性）
 
 ## 2. 架构
 
@@ -17,29 +17,34 @@
 ┌─────────────────────────────┐
 │   MCP Protocol Layer        │  ← 协议处理（server.py）
 ├─────────────────────────────┤
-│   Handler Router Layer      │  ← 请求路由 + 安全校验
+│   Handler Router Layer      │  ← 请求路由 + 安全校验 + 缓存
 ├─────────────────────────────┤
-│   Business Logic Layer      │  ← 8个工具handler
+│   Business Logic Layer      │  ← 12个工具handler
 ├─────────────────────────────┤
-│   Infrastructure Layer      │  ← services/*
+│   Infrastructure Layer      │  ← services/* + cache
 └─────────────────────────────┘
 ```
 
-### 当前结构（V2.0）
+### 当前结构（V3.0）
 
 ```
 server.py
-├── TOOLS (8个)               # 工具定义
+├── TOOLS (12个)              # 工具定义
+├── _ops_semaphore            # 🆕 并发控制 (MAX_CONCURRENT_OPS=20)
 ├── handle_list_tools()       # 返回工具列表
 ├── handle_call_tool()        # 统一入口 + 安全校验 + 审计
 ├── handle_list_directory()   # 目录操作
 ├── handle_read_file()        # 文件读取
 ├── handle_write_file()       # 文件写入
-├── handle_delete_file()      # 文件删除 🆕
+├── handle_delete_file()      # 文件删除
 ├── handle_get_file_info()    # 文件信息
 ├── handle_search_files()     # 文件搜索
-├── handle_copy_file()        # 文件复制 🆕
-└── handle_move_file()        # 文件移动 🆕
+├── handle_copy_file()        # 文件复制
+├── handle_move_file()        # 文件移动
+├── handle_batch_read_files() # 🆕 批量读取
+├── handle_batch_delete_files() # 🆕 批量删除
+├── handle_read_file_chunked() # 🆕 分块读取
+└── handle_cache_stats()      # 🆕 缓存统计
 
 src/mcp_project/services/
 ├── logger.py                 # 分级JSON日志
@@ -47,7 +52,8 @@ src/mcp_project/services/
 ├── sandbox.py                # 路径沙箱
 ├── sensitive.py              # 敏感文件守卫
 ├── permissions.py            # RBAC权限控制
-└── errors.py                 # 错误码 + 重试 + 超时
+├── errors.py                 # 错误码 + 重试 + 超时
+└── cache.py                  # 🆕 LRU缓存管理
 ```
 
 ### 安全流程
