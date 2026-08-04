@@ -25,6 +25,16 @@ from src.mcp_project.services import (
     get_sensitive_guard,
     get_permission_manager,
     get_cache_manager,
+    get_file_comparator,
+    get_file_merger,
+    get_batch_renamer,
+    get_content_analyzer,
+    get_duplicate_finder,
+    get_enhanced_searcher,
+    get_search_index,
+    get_file_type_detector,
+    get_encoding_detector,
+    get_file_compressor,
     Role,
     ErrorCode,
     MCPError,
@@ -46,6 +56,18 @@ sandbox = get_sandbox(allowed_roots=[APP_ROOT])
 sensitive_guard = get_sensitive_guard()
 perm_manager = get_permission_manager(default_role=Role.ADMIN)
 cache_manager = get_cache_manager()
+
+# 第三阶段：新服务初始化
+file_comparator = get_file_comparator()
+file_merger = get_file_merger()
+batch_renamer = get_batch_renamer()
+content_analyzer = get_content_analyzer()
+duplicate_finder = get_duplicate_finder()
+enhanced_searcher = get_enhanced_searcher(max_results=1000, max_file_size=10 * 1024 * 1024)
+search_index = get_search_index()
+file_type_detector = get_file_type_detector()
+encoding_detector = get_encoding_detector()
+file_compressor = get_file_compressor()
 
 # 并发控制：限制同时进行的文件操作数
 MAX_CONCURRENT_OPS = 20
@@ -277,6 +299,341 @@ TOOLS = [
             "properties": {},
         },
     ),
+    # ============== 第三阶段：高级文件操作 ==============
+    types.Tool(
+        name="compare_files",
+        description="比较两个文本文件的内容差异",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file1": {"type": "string", "description": "第一个文件路径"},
+                "file2": {"type": "string", "description": "第二个文件路径"},
+            },
+            "required": ["file1", "file2"],
+        },
+    ),
+    types.Tool(
+        name="merge_files",
+        description="合并多个文本文件为一个文件",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "input_files": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "输入文件路径列表",
+                },
+                "output_file": {
+                    "type": "string", 
+                    "description": "输出文件路径",
+                },
+                "separator": {
+                    "type": "string",
+                    "description": "文件内容分隔符（默认为换行符）",
+                    "default": "\n",
+                },
+            },
+            "required": ["input_files", "output_file"],
+        },
+    ),
+    types.Tool(
+        name="batch_rename_files",
+        description="批量重命名文件（支持正则表达式）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "要重命名文件的目录",
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "要匹配的模式（支持正则表达式）",
+                },
+                "replacement": {
+                    "type": "string",
+                    "description": "替换字符串",
+                },
+                "regex": {
+                    "type": "boolean",
+                    "description": "是否使用正则表达式",
+                    "default": False,
+                },
+                "preview_only": {
+                    "type": "boolean",
+                    "description": "仅预览而不实际重命名",
+                    "default": False,
+                },
+            },
+            "required": ["directory", "pattern", "replacement"],
+        },
+    ),
+    types.Tool(
+        name="analyze_file_content",
+        description="分析文本文件的统计信息",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径"},
+            },
+            "required": ["path"],
+        },
+    ),
+    types.Tool(
+        name="find_duplicate_files",
+        description="查找目录中的重复文件（基于内容哈希）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "要搜索的目录",
+                },
+                "check_content": {
+                    "type": "boolean",
+                    "description": "是否检查文件内容（否则只检查文件名和大小）",
+                    "default": True,
+                },
+                "min_size": {
+                    "type": "integer",
+                    "description": "最小文件大小（字节），小于此大小的文件会被跳过",
+                    "default": 1024,
+                },
+            },
+            "required": ["directory"],
+        },
+    ),
+    # ============== 第三阶段：增强搜索 ==============
+    types.Tool(
+        name="full_text_search",
+        description="全文搜索（支持大小写敏感、整词匹配）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "搜索目录",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "搜索查询",
+                },
+                "case_sensitive": {
+                    "type": "boolean",
+                    "description": "是否大小写敏感",
+                    "default": False,
+                },
+                "whole_word": {
+                    "type": "boolean",
+                    "description": "是否整词匹配",
+                    "default": False,
+                },
+                "file_pattern": {
+                    "type": "string",
+                    "description": "文件名模式（例如 *.txt）",
+                },
+            },
+            "required": ["directory", "query"],
+        },
+    ),
+    types.Tool(
+        name="regex_search",
+        description="使用正则表达式搜索文件内容",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "搜索目录",
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "正则表达式模式",
+                },
+                "file_pattern": {
+                    "type": "string",
+                    "description": "文件名模式",
+                },
+            },
+            "required": ["directory", "pattern"],
+        },
+    ),
+    types.Tool(
+        name="fuzzy_search",
+        description="模糊搜索（支持拼写错误的匹配）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "搜索目录",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "搜索查询",
+                },
+                "similarity_threshold": {
+                    "type": "number",
+                    "description": "相似度阈值（0-1之间）",
+                    "default": 0.8,
+                },
+                "file_pattern": {
+                    "type": "string",
+                    "description": "文件名模式",
+                },
+            },
+            "required": ["directory", "query"],
+        },
+    ),
+    types.Tool(
+        name="advanced_search",
+        description="多条件高级搜索（按类型、大小、时间等）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "搜索目录",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "搜索查询",
+                },
+                "file_types": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "文件类型列表（如 .txt, .py, .js）",
+                },
+                "min_size": {
+                    "type": "integer",
+                    "description": "最小文件大小（字节）",
+                },
+                "max_size": {
+                    "type": "integer",
+                    "description": "最大文件大小（字节）",
+                },
+                "modified_after": {
+                    "type": "string",
+                    "description": "修改时间之后（ISO格式，如 2024-01-01T00:00:00）",
+                },
+                "modified_before": {
+                    "type": "string",
+                    "description": "修改时间之前（ISO格式）",
+                },
+            },
+            "required": ["directory", "query"],
+        },
+    ),
+    # ============== 第三阶段：文件类型和编码 ==============
+    types.Tool(
+        name="detect_file_type",
+        description="检测文件的真实类型（基于魔数，非扩展名）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径"},
+            },
+            "required": ["path"],
+        },
+    ),
+    types.Tool(
+        name="detect_file_encoding",
+        description="检测文本文件的编码",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "文件路径"},
+                "sample_size": {
+                    "type": "integer",
+                    "description": "样本大小（字节）",
+                    "default": 10240,
+                },
+            },
+            "required": ["path"],
+        },
+    ),
+    # ============== 第三阶段：搜索索引管理 ==============
+    types.Tool(
+        name="index_directory",
+        description="为目录创建搜索索引以提高搜索性能",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "要索引的目录",
+                },
+                "rebuild": {
+                    "type": "boolean",
+                    "description": "是否重建现有索引",
+                    "default": False,
+                },
+            },
+            "required": ["directory"],
+        },
+    ),
+    types.Tool(
+        name="search_index",
+        description="使用预建的索引进行快速搜索",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "搜索查询"},
+                "limit": {
+                    "type": "integer",
+                    "description": "结果数量限制",
+                    "default": 100,
+                },
+            },
+            "required": ["query"],
+        },
+    ),
+    types.Tool(
+        name="index_stats",
+        description="获取搜索索引统计信息",
+        input_schema={
+            "type": "object",
+            "properties": {},
+        },
+    ),
+    # ============== 第三阶段：文件压缩 ==============
+    types.Tool(
+        name="compress_file",
+        description="压缩单个文件（支持zip、gzip、bzip2格式）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "source_file": {"type": "string", "description": "源文件路径"},
+                "format_type": {
+                    "type": "string",
+                    "description": "压缩格式（zip、gzip、bzip2）",
+                    "default": "zip",
+                    "enum": ["zip", "gzip", "bzip2"],
+                },
+                "compression_level": {
+                    "type": "integer",
+                    "description": "压缩级别（1-9，9为最高压缩）",
+                    "default": 6,
+                },
+            },
+            "required": ["source_file"],
+        },
+    ),
+    types.Tool(
+        name="decompress_file",
+        description="解压文件（支持zip、gzip、bzip2、tar格式）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "archive_file": {"type": "string", "description": "压缩文件路径"},
+                "output_dir": {
+                    "type": "string",
+                    "description": "输出目录（默认为压缩文件同目录下新建文件夹）",
+                },
+            },
+            "required": ["archive_file"],
+        },
+    ),
 ]
 
 # ============================================================
@@ -370,6 +727,27 @@ async def handle_call_tool(
             "batch_delete_files": "delete",
             "read_file_chunked": "read",
             "cache_stats": "read",
+            # 第三阶段：高级文件操作
+            "compare_files": "read",
+            "merge_files": "write",
+            "batch_rename_files": "write",
+            "analyze_file_content": "read",
+            "find_duplicate_files": "read",
+            # 第三阶段：增强搜索
+            "full_text_search": "read",
+            "regex_search": "read",
+            "fuzzy_search": "read",
+            "advanced_search": "read",
+            # 第三阶段：文件类型和编码
+            "detect_file_type": "read",
+            "detect_file_encoding": "read",
+            # 第三阶段：搜索索引管理
+            "index_directory": "write",  # 需要写入权限来创建索引
+            "search_index": "read",
+            "index_stats": "read",
+            # 第三阶段：文件压缩
+            "compress_file": "write",
+            "decompress_file": "write",
         }
         action = action_map.get(tool_name, "read")
         for path in resource_paths:
@@ -401,6 +779,27 @@ async def handle_call_tool(
             "batch_delete_files": handle_batch_delete_files,
             "read_file_chunked": handle_read_file_chunked,
             "cache_stats": handle_cache_stats,
+            # 第三阶段：高级文件操作
+            "compare_files": handle_compare_files,
+            "merge_files": handle_merge_files,
+            "batch_rename_files": handle_batch_rename_files,
+            "analyze_file_content": handle_analyze_file_content,
+            "find_duplicate_files": handle_find_duplicate_files,
+            # 第三阶段：增强搜索
+            "full_text_search": handle_full_text_search,
+            "regex_search": handle_regex_search,
+            "fuzzy_search": handle_fuzzy_search,
+            "advanced_search": handle_advanced_search,
+            # 第三阶段：文件类型和编码
+            "detect_file_type": handle_detect_file_type,
+            "detect_file_encoding": handle_detect_file_encoding,
+            # 第三阶段：搜索索引管理
+            "index_directory": handle_index_directory,
+            "search_index": handle_search_index,
+            "index_stats": handle_index_stats,
+            # 第三阶段：文件压缩
+            "compress_file": handle_compress_file,
+            "decompress_file": handle_decompress_file,
         }
 
         handler = handlers[tool_name]
@@ -1129,3 +1528,664 @@ if __name__ == "__main__":
     import asyncio
 
     asyncio.run(main())
+# ============== 第三阶段：高级文件操作处理器 ==============
+
+async def handle_compare_files(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """比较两个文件"""
+    file1 = arguments["file1"]
+    file2 = arguments["file2"]
+    
+    file1_resolved = _resolve_path(file1)
+    file2_resolved = _resolve_path(file2)
+    
+    result = file_comparator.compare_files(
+        Path(file1_resolved), 
+        Path(file2_resolved)
+    )
+    
+    if result["identical"]:
+        summary = f"文件内容完全相同: {file1} 和 {file2}"
+    else:
+        summary = f"文件内容有差异: {file1} 和 {file2}"
+    
+    details = f"""
+{summary}
+
+文件1: {result['file1']} ({result['size1']} 字节)
+文件2: {result['file2']} ({result['size2']} 字节)
+
+差异统计:
+  - 新增行: {result['diff_summary']['additions']}
+  - 删除行: {result['diff_summary']['deletions']}
+  - 总计差异: {result['diff_summary']['total_differences']}
+
+差异预览:
+{result['diff_preview']}
+"""
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_merge_files(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """合并多个文件"""
+    input_files = arguments["input_files"]
+    output_file = arguments["output_file"]
+    separator = arguments.get("separator", "\n")
+    
+    input_paths = [Path(_resolve_path(f)) for f in input_files]
+    output_path = Path(_resolve_path(output_file))
+    
+    result = file_merger.merge_files(input_paths, output_path, separator)
+    
+    summary = f"已合并 {result['total_files']} 个文件到 {output_file}"
+    details = f"""
+{summary}
+
+输出文件: {result['output_file']}
+输入文件: {', '.join(result['input_files'])}
+总文件大小: {result['total_size']} 字节
+输出文件大小: {result['output_size']} 字节
+使用分隔符: {result['separator']}
+"""
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_batch_rename_files(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """批量重命名文件"""
+    directory = arguments["directory"]
+    pattern = arguments["pattern"]
+    replacement = arguments["replacement"]
+    regex = arguments.get("regex", False)
+    preview_only = arguments.get("preview_only", False)
+    
+    dir_resolved = _resolve_path(directory)
+    
+    result = batch_renamer.batch_rename(
+        Path(dir_resolved), 
+        pattern, 
+        replacement, 
+        regex, 
+        preview_only
+    )
+    
+    if preview_only:
+        action = "预览"
+    else:
+        action = "执行"
+    
+    summary = f"{action}批量重命名: {result['total_renamed']} 个文件重命名，{result['total_failed']} 个失败"
+    details = f"""
+{summary}
+
+目录: {result['directory']}
+模式: {result['pattern']}
+替换: {result['replacement']}
+使用正则: {result['regex']}
+预览模式: {result['preview_only']}
+
+重命名的文件:
+"""
+    
+    for i, file_info in enumerate(result["renamed_files"][:20], 1):  # 限制显示数量
+        preview_mark = "（预览）" if file_info.get("preview", False) else ""
+        details += f"  {i}. {file_info['old_name']} → {file_info['new_name']}{preview_mark}\n"
+    
+    if len(result["renamed_files"]) > 20:
+        details += f"  ... 还有 {len(result['renamed_files']) - 20} 个文件\n"
+    
+    if result["failed_files"]:
+        details += "\n失败的文件:\n"
+        for i, fail_info in enumerate(result["failed_files"][:10], 1):
+            details += f"  {i}. {fail_info.get('file', 'unknown')}: {fail_info.get('error', '未知错误')}\n"
+        if len(result["failed_files"]) > 10:
+            details += f"  ... 还有 {len(result['failed_files']) - 10} 个失败\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_analyze_file_content(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """分析文件内容"""
+    path = arguments["path"]
+    
+    path_resolved = _resolve_path(path)
+    
+    result = content_analyzer.analyze_file_content(Path(path_resolved))
+    
+    summary = f"文件内容分析: {path}"
+    details = f"""
+{summary}
+
+基本信息:
+  - 文件: {result['file']}
+  - 大小: {result['size_bytes']} 字节
+  - 扩展名: {result['file_extension']}
+  - 检测语言: {result['detected_language']}
+  - 编码问题: {'有' if result['encoding_issues'] else '无'}
+
+内容统计:
+  - 字符数: {result['character_count']}
+  - 行数: {result['line_count']}
+  - 单词数: {result['word_count']}
+
+代码分析:
+  - 代码行: {result['code_analysis']['code_lines']}
+  - 注释行: {result['code_analysis']['comment_lines']}
+  - 空行: {result['code_analysis']['blank_lines']}
+  - 总行数: {result['code_analysis']['total_lines']}
+  - 注释比例: {result['code_analysis']['comment_ratio']:.1%}
+  - 代码比例: {result['code_analysis']['code_ratio']:.1%}
+"""
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_find_duplicate_files(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """查找重复文件"""
+    directory = arguments["directory"]
+    check_content = arguments.get("check_content", True)
+    min_size = arguments.get("min_size", 1024)
+    
+    dir_resolved = _resolve_path(directory)
+    
+    result = duplicate_finder.find_duplicates(
+        Path(dir_resolved), 
+        check_content, 
+        min_size
+    )
+    
+    summary = f"重复文件检测: 找到 {result['duplicate_groups']} 组重复文件，共 {result['duplicate_files']} 个文件"
+    details = f"""
+{summary}
+
+目录: {result['directory']}
+检查内容: {result['check_content']}
+最小大小: {result['min_size']} 字节
+扫描文件数: {result['total_files_scanned']}
+可节省空间: {result['potential_space_saved']} 字节
+跳过的文件: {result['skipped_files']}
+
+重复文件组:
+"""
+    
+    for i, group in enumerate(result["duplicates"][:10], 1):  # 限制显示数量
+        details += f"\n第 {i} 组 ({group['size_bytes']} 字节 × {group['count']}):\n"
+        for j, file_path in enumerate(group["files"][:5], 1):
+            details += f"  {j}. {file_path}\n"
+        if len(group["files"]) > 5:
+            details += f"  ... 还有 {len(group['files']) - 5} 个文件\n"
+    
+    if len(result["duplicates"]) > 10:
+        details += f"\n... 还有 {len(result['duplicates']) - 10} 组重复文件\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+# ============== 第三阶段：增强搜索处理器 ==============
+
+async def handle_full_text_search(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """全文搜索"""
+    directory = arguments["directory"]
+    query = arguments["query"]
+    case_sensitive = arguments.get("case_sensitive", False)
+    whole_word = arguments.get("whole_word", False)
+    file_pattern = arguments.get("file_pattern")
+    
+    dir_resolved = _resolve_path(directory)
+    
+    result = enhanced_searcher.full_text_search(
+        Path(dir_resolved),
+        query,
+        case_sensitive,
+        whole_word,
+        file_pattern
+    )
+    
+    summary = f"全文搜索: 在 {result['files_processed']} 个文件中找到 {result['total_matches']} 处匹配"
+    details = f"""
+{summary}
+
+目录: {result['directory']}
+查询: {result['query']}
+大小写敏感: {result['case_sensitive']}
+整词匹配: {result['whole_word']}
+匹配文件数: {result['files_with_matches']}
+
+搜索结果:
+"""
+    
+    for i, item in enumerate(result["results"][:15], 1):  # 限制显示数量
+        details += f"\n{i}. {item['file']} (相关性: {item['relevance']})\n"
+        for j, match in enumerate(item["matches"][:3], 1):
+            details += f"   第 {match['line']} 行: {match['context']}\n"
+        if len(item["matches"]) > 3:
+            details += f"   ... 还有 {len(item['matches']) - 3} 处匹配\n"
+    
+    if len(result["results"]) > 15:
+        details += f"\n... 还有 {len(result['results']) - 15} 个文件\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_regex_search(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """正则搜索"""
+    directory = arguments["directory"]
+    pattern = arguments["pattern"]
+    file_pattern = arguments.get("file_pattern")
+    
+    dir_resolved = _resolve_path(directory)
+    
+    result = enhanced_searcher.regex_search(
+        Path(dir_resolved),
+        pattern,
+        file_pattern
+    )
+    
+    summary = f"正则搜索: 在 {result['files_processed']} 个文件中找到 {result['total_matches']} 处匹配"
+    details = f"""
+{summary}
+
+目录: {result['directory']}
+正则模式: {result['pattern']}
+匹配文件数: {result['files_with_matches']}
+
+搜索结果:
+"""
+    
+    for i, result_item in enumerate(result["regex_results"][:10], 1):
+        details += f"\n{i}. {result_item.file_path} (相关性: {result_item.relevance})\n"
+        for j, match in enumerate(result_item.matches[:2], 1):
+            groups_info = f" 捕获组: {match['groups']}" if match.get("groups") else ""
+            details += f"   第 {match['line']} 行: {match['context']}{groups_info}\n"
+        if len(result_item.matches) > 2:
+            details += f"   ... 还有 {len(result_item.matches) - 2} 处匹配\n"
+    
+    if len(result["regex_results"]) > 10:
+        details += f"\n... 还有 {len(result['regex_results']) - 10} 个文件\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_fuzzy_search(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """模糊搜索"""
+    directory = arguments["directory"]
+    query = arguments["query"]
+    similarity_threshold = arguments.get("similarity_threshold", 0.8)
+    file_pattern = arguments.get("file_pattern")
+    
+    dir_resolved = _resolve_path(directory)
+    
+    result = enhanced_searcher.fuzzy_search(
+        Path(dir_resolved),
+        query,
+        similarity_threshold,
+        file_pattern
+    )
+    
+    summary = f"模糊搜索: 在 {result['files_processed']} 个文件中找到 {result['total_matches']} 处匹配"
+    details = f"""
+{summary}
+
+目录: {result['directory']}
+查询: {result['query']}
+相似度阈值: {result['similarity_threshold']}
+
+搜索结果:
+"""
+    
+    for i, match in enumerate(result["fuzzy_results"][:20], 1):
+        similarity_percent = match["similarity"] * 100
+        details += f"{i}. {match['file']} (相似度: {similarity_percent:.1f}%)\n"
+        details += f"   文件名: {match.get('filename', 'N/A')}\n"
+        details += f"   类型: {match['type']}\n"
+        if match.get("word"):
+            details += f"   匹配词: {match['word']}\n"
+        details += "\n"
+    
+    if len(result["fuzzy_results"]) > 20:
+        details += f"... 还有 {len(result['fuzzy_results']) - 20} 个结果\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_advanced_search(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """高级搜索"""
+    directory = arguments["directory"]
+    query = arguments["query"]
+    file_types = arguments.get("file_types")
+    min_size = arguments.get("min_size")
+    max_size = arguments.get("max_size")
+    modified_after = arguments.get("modified_after")
+    modified_before = arguments.get("modified_before")
+    
+    dir_resolved = _resolve_path(directory)
+    
+    result = enhanced_searcher.advanced_search(
+        Path(dir_resolved),
+        query,
+        file_types,
+        min_size,
+        max_size,
+        modified_after,
+        modified_before
+    )
+    
+    summary = f"高级搜索: 在 {result['files_processed']} 个文件中找到 {result['total_matches']} 个匹配"
+    details = f"""
+{summary}
+
+目录: {result['directory']}
+查询: {result['query']}
+过滤器: {result['filters']}
+
+搜索结果:
+"""
+    
+    for i, match in enumerate(result["advanced_results"][:20], 1):
+        details += f"{i}. {match['file']}\n"
+        details += f"   大小: {match['size_bytes']} 字节\n"
+        details += f"   修改时间: {match['modified_time']}\n"
+        details += f"   扩展名: {match['extension']}\n"
+        details += f"   文件名匹配: {match['filename_match']}\n"
+        details += f"   内容匹配: {match['content_match']}\n\n"
+    
+    if len(result["advanced_results"]) > 20:
+        details += f"... 还有 {len(result['advanced_results']) - 20} 个结果\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+# ============== 第三阶段：文件类型和编码处理器 ==============
+
+async def handle_detect_file_type(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """检测文件类型"""
+    path = arguments["path"]
+    
+    path_resolved = _resolve_path(path)
+    
+    result = file_type_detector.detect_file_type(Path(path_resolved))
+    
+    summary = f"文件类型检测: {path}"
+    details = f"""
+{summary}
+
+文件信息:
+  - 路径: {result['file']}
+  - 扩展名: {result['extension']}
+  - 大小: {result['size_bytes']} 字节
+
+类型检测:
+  - MIME类型: {result['mime_type']}
+  - 基于扩展名: {result['mime_from_extension'] or '未识别'}
+  - 真实类型: {result['real_type'] or '未识别'}
+  - 基于内容: {result['content_type'] or '未识别'}
+
+文件分类:
+  - 文本文件: {result['is_text']}
+  - 二进制文件: {result['is_binary']}
+  - 图像文件: {result['categories']['is_image']}
+  - 压缩文件: {result['categories']['is_archive']}
+  - 音频文件: {result['categories']['is_audio']}
+  - 视频文件: {result['categories']['is_video']}
+  - 文档文件: {result['categories']['is_document']}
+  - 代码文件: {result['categories']['is_code']}
+  - 配置文件: {result['categories']['is_config']}
+  - 可执行文件: {result['categories']['is_executable']}
+"""
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_detect_file_encoding(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """检测文件编码"""
+    path = arguments["path"]
+    sample_size = arguments.get("sample_size", 10240)
+    
+    path_resolved = _resolve_path(path)
+    
+    result = encoding_detector.detect_encoding(
+        Path(path_resolved), 
+        sample_size
+    )
+    
+    summary = f"文件编码检测: {path}"
+    details = f"""
+{summary}
+
+文件信息:
+  - 路径: {result['file']}
+  - 大小: {result['size_bytes']} 字节
+  - 文本文件: {result['is_text_file']}
+  - 样本大小: {result['sample_size']} 字节
+
+编码检测:
+  - 检测编码: {result['detected_encoding']}
+  - 置信度: {result['detection_confidence']:.1%}
+  - 推荐编码: {result['recommended_encoding']}
+
+常见编码测试:
+"""
+    
+    for test in result["common_encodings_tested"]:
+        status = "✓" if test["valid"] else "✗"
+        details += f"  - {status} {test['encoding']}\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+# ============== 第三阶段：搜索索引处理器 ==============
+
+async def handle_index_directory(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """索引目录"""
+    directory = arguments["directory"]
+    rebuild = arguments.get("rebuild", False)
+    
+    dir_resolved = _resolve_path(directory)
+    
+    result = search_index.index_directory(Path(dir_resolved), rebuild)
+    
+    action = "重建" if rebuild else "创建"
+    summary = f"{action}搜索索引: 成功索引 {result['indexed_files']} 个文件"
+    details = f"""
+{summary}
+
+目录: {result['directory']}
+索引位置: {result['index_location']}
+索引文件数: {result['indexed_files']}
+跳过文件数: {result['skipped_files']}
+索引单词数: {result['total_words_indexed']}
+重建索引: {result['rebuild']}
+"""
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_search_index(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """搜索索引"""
+    query = arguments["query"]
+    limit = arguments.get("limit", 100)
+    
+    result = search_index.search_index(query, limit)
+    
+    summary = f"索引搜索: 找到 {result['total_results']} 个相关文件"
+    details = f"""
+{summary}
+
+查询: {result['query']}
+查询词: {result['query_words']}
+结果数量: {result['total_results']}
+
+搜索结果:
+"""
+    
+    for i, item in enumerate(result["results"][:15], 1):
+        details += f"\n{i}. {item['file']} (相关性: {item['relevance']})\n"
+        details += f"   大小: {item['size_bytes']} 字节\n"
+        details += f"   修改时间: {item['modified_time']}\n"
+        details += f"   扩展名: {item['extension']}\n"
+        details += f"   匹配词: {', '.join(item['matched_words'][:5])}\n"
+        details += f"   总频率: {item['total_frequency']}\n"
+    
+    if len(result["results"]) > 15:
+        details += f"\n... 还有 {len(result['results']) - 15} 个结果\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_index_stats(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """索引统计"""
+    result = search_index.get_index_stats()
+    
+    summary = f"搜索索引统计"
+    details = f"""
+{summary}
+
+索引位置: {result['index_location']}
+索引大小: {result['index_size_mb']:.2f} MB
+总文件数: {result['total_files']}
+总单词数: {result['total_words']}
+总大小: {result['total_size_bytes']} 字节
+
+前10文件扩展名:
+"""
+    
+    for i, ext_info in enumerate(result["top_extensions"], 1):
+        details += f"  {i}. {ext_info['extension']}: {ext_info['count']} 个文件\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+# ============== 第三阶段：文件压缩处理器 ==============
+
+async def handle_compress_file(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """压缩文件"""
+    source_file = arguments["source_file"]
+    format_type = arguments.get("format_type", "zip")
+    compression_level = arguments.get("compression_level", 6)
+    
+    source_resolved = _resolve_path(source_file)
+    
+    result = file_compressor.compress_file(
+        Path(source_resolved),
+        format_type,
+        compression_level
+    )
+    
+    compression_ratio = result["compression_ratio"]
+    summary = f"文件压缩: {source_file} → 压缩率 {compression_ratio}%"
+    details = f"""
+{summary}
+
+源文件: {result['source_file']}
+压缩文件: {result['compressed_file']}
+压缩格式: {result['format']}
+压缩级别: {result['compression_level']}
+
+压缩效果:
+  - 原始大小: {result['original_size']} 字节
+  - 压缩大小: {result['compressed_size']} 字节
+  - 压缩率: {compression_ratio}%
+  - 节省空间: {result['space_saved']} 字节
+  - 临时文件: {result['temporary_location']}
+"""
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
+
+
+async def handle_decompress_file(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """解压文件"""
+    archive_file = arguments["archive_file"]
+    output_dir = arguments.get("output_dir")
+    
+    archive_resolved = _resolve_path(archive_file)
+    output_path = Path(_resolve_path(output_dir)) if output_dir else None
+    
+    result = file_compressor.decompress_file(
+        Path(archive_resolved),
+        output_path
+    )
+    
+    summary = f"文件解压: {archive_file} → 解压 {result['total_files']} 个文件"
+    details = f"""
+{summary}
+
+压缩文件: {result['archive_file']}
+输出目录: {result['output_directory']}
+压缩大小: {result['archive_size']} 字节
+解压大小: {result['total_extracted_size']} 字节
+压缩率: {result['compression_ratio']}%
+
+解压的文件:
+"""
+    
+    for i, file_path in enumerate(result["extracted_files"][:10], 1):
+        details += f"  {i}. {file_path}\n"
+    
+    if len(result["extracted_files"]) > 10:
+        details += f"  ... 还有 {len(result['extracted_files']) - 10} 个文件\n"
+    
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=details)]
+    )
