@@ -6,8 +6,8 @@
 
 基于 MCP 2.0.0 的企业级文件操作服务，为LLM客户端提供标准化文件管理能力。
 
-- **当前**: V3.0（第二阶段：性能优化 ✅）
-- **目标**: V4.0（功能扩展 + 企业级特性）
+- **当前**: V4.0（第四阶段：企业级特性 ✅）
+- **目标**: V5.0（生态集成：数据库、网络功能、AI赋能）
 
 ## 2. 架构
 
@@ -19,18 +19,22 @@
 ├─────────────────────────────┤
 │   Handler Router Layer      │  ← 请求路由 + 安全校验 + 缓存
 ├─────────────────────────────┤
-│   Business Logic Layer      │  ← 12个工具handler
+│   Business Logic Layer      │  ← 33个工具handler
 ├─────────────────────────────┤
 │   Infrastructure Layer      │  ← services/* + cache
+├─────────────────────────────┤
+│   Observability Layer       │  ← 🆕 MetricsCollector/HealthChecker/AlertManager
+├─────────────────────────────┤
+│   Config Layer              │  ← 🆕 ConfigManager/ServerConfig (dev/test/prod)
 └─────────────────────────────┘
 ```
 
-### 当前结构（V3.0）
+### 当前结构（V4.0）
 
 ```
 server.py
-├── TOOLS (12个)              # 工具定义
-├── _ops_semaphore            # 🆕 并发控制 (MAX_CONCURRENT_OPS=20)
+├── TOOLS (33个)              # 工具定义（基础8 + 性能4 + 高级17 + 企业级5）
+├── _ops_semaphore            # 并发控制 (MAX_CONCURRENT_OPS=20)
 ├── handle_list_tools()       # 返回工具列表
 ├── handle_call_tool()        # 统一入口 + 安全校验 + 审计
 ├── handle_list_directory()   # 目录操作
@@ -41,10 +45,15 @@ server.py
 ├── handle_search_files()     # 文件搜索
 ├── handle_copy_file()        # 文件复制
 ├── handle_move_file()        # 文件移动
-├── handle_batch_read_files() # 🆕 批量读取
-├── handle_batch_delete_files() # 🆕 批量删除
-├── handle_read_file_chunked() # 🆕 分块读取
-└── handle_cache_stats()      # 🆕 缓存统计
+├── handle_batch_read_files() # 批量读取
+├── handle_batch_delete_files() # 批量删除
+├── handle_read_file_chunked() # 分块读取
+├── handle_cache_stats()      # 缓存统计
+├── handle_health_check()     # 🆕 健康检查
+├── handle_get_metrics()      # 🆕 性能指标
+├── handle_get_alerts()       # 🆕 告警列表
+├── handle_get_config()       # 🆕 获取配置
+└── handle_update_config()    # 🆕 动态更新配置
 
 src/mcp_project/services/
 ├── logger.py                 # 分级JSON日志
@@ -53,7 +62,17 @@ src/mcp_project/services/
 ├── sensitive.py              # 敏感文件守卫
 ├── permissions.py            # RBAC权限控制
 ├── errors.py                 # 错误码 + 重试 + 超时
-└── cache.py                  # 🆕 LRU缓存管理
+├── cache.py                  # LRU缓存管理
+├── advanced_operations.py    # 高级文件操作（比较/合并/重命名）
+├── search_enhancement.py     # 增强搜索（全文/正则/模糊/索引）
+├── file_analysis.py          # 文件分析（类型/编码/压缩）
+├── observability.py          # 🆕 可观测性（MetricsCollector/HealthChecker/AlertManager）
+└── config.py                 # 🆕 配置管理（ConfigManager/ServerConfig）
+
+tests/                        # 🆕 测试体系
+├── unit/                     # 单元测试（47项全通过）
+├── integration/              # 集成测试（8项通过）
+└── security/                 # 安全测试
 ```
 
 ### 安全流程

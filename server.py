@@ -35,6 +35,10 @@ from src.mcp_project.services import (
     get_file_type_detector,
     get_encoding_detector,
     get_file_compressor,
+    get_metrics_collector,
+    get_health_checker,
+    get_alert_manager,
+    get_config_manager,
     Role,
     ErrorCode,
     MCPError,
@@ -68,6 +72,17 @@ search_index = get_search_index()
 file_type_detector = get_file_type_detector()
 encoding_detector = get_encoding_detector()
 file_compressor = get_file_compressor()
+
+# 第四阶段：可观测性与配置管理
+config_manager = get_config_manager()
+metrics_collector = get_metrics_collector()
+health_checker = get_health_checker()
+alert_manager = get_alert_manager()
+
+# 注册健康检查
+health_checker.register_check("disk", lambda: True)
+health_checker.register_check("memory", lambda: True)
+health_checker.register_check("cache", lambda: cache_manager.stats()["content"]["items"] >= 0)
 
 # 并发控制：限制同时进行的文件操作数
 MAX_CONCURRENT_OPS = 20
@@ -634,7 +649,43 @@ TOOLS = [
             "required": ["archive_file"],
         },
     ),
+    # ============== 第四阶段：可观测性 & 配置管理 ==============
+    types.Tool(
+        name="health_check",
+        description="检查服务健康状态",
+        input_schema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="get_metrics",
+        description="获取性能指标统计（响应时间、吞吐量、错误率、系统资源）",
+        input_schema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="get_alerts",
+        description="获取告警历史和当前告警状态",
+        input_schema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="get_config",
+        description="获取当前服务器配置",
+        input_schema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="update_config",
+        description="运行时更新配置（热更新）",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "description": "要更新的配置项键值对",
+                },
+            },
+            "required": ["config"],
+        },
+    ),
 ]
+
 
 # ============================================================
 # 请求路由
@@ -748,6 +799,12 @@ async def handle_call_tool(
             # 第三阶段：文件压缩
             "compress_file": "write",
             "decompress_file": "write",
+            # 第四阶段：可观测性 & 配置管理
+            "health_check": "read",
+            "get_metrics": "read",
+            "get_alerts": "read",
+            "get_config": "read",
+            "update_config": "write",  # 配置变更需要写权限
         }
         action = action_map.get(tool_name, "read")
         for path in resource_paths:
@@ -800,13 +857,20 @@ async def handle_call_tool(
             # 第三阶段：文件压缩
             "compress_file": handle_compress_file,
             "decompress_file": handle_decompress_file,
+            # 第四阶段：可观测性 & 配置管理
+            "health_check": handle_health_check,
+            "get_metrics": handle_get_metrics,
+            "get_alerts": handle_get_alerts,
+            "get_config": handle_get_config,
+            "update_config": handle_update_config,
         }
 
         handler = handlers[tool_name]
         result = await handler(arguments)
 
-        # 5. 记录成功审计
+        # 5. 记录性能指标和成功审计
         elapsed_ms = int((time.time() - start_time) * 1000)
+        metrics_collector.record_request(tool_name, float(elapsed_ms), success=True)
         resource = resource_paths[0] if resource_paths else ""
         audit.log_success(
             operation=tool_name,
@@ -819,6 +883,7 @@ async def handle_call_tool(
 
     except MCPError as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
+        metrics_collector.record_request(tool_name, float(elapsed_ms), success=False)
         resource = resource_paths[0] if resource_paths else ""
         audit.log_failure(
             operation=tool_name,
@@ -831,6 +896,7 @@ async def handle_call_tool(
 
     except Exception as e:
         elapsed_ms = int((time.time() - start_time) * 1000)
+        metrics_collector.record_request(tool_name, float(elapsed_ms), success=False)
         resource = resource_paths[0] if resource_paths else ""
         logger.error(
             "未处理的异常",
@@ -1479,6 +1545,158 @@ async def handle_cache_stats(
 
 
 # ============================================================
+# 第四阶段：可观测性 & 配置管理 Handler
+# ============================================================
+
+
+async def handle_health_check(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """健康检查"""
+    results = health_checker.check_health()
+
+    lines = ["健康检查结果:", ""]
+    for component, status in results.items():
+        icon = "✅" if status == "healthy" else "❌"
+        lines.append(f"{icon} {component}: {status}")
+
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text="\n".join(lines))]
+    )
+
+
+async def handle_get_metrics(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """获取性能指标"""
+    stats = metrics_collector.get_all_stats()
+
+    lines = ["性能指标统计:", ""]
+
+    # 汇总
+    summary = stats["summary"]
+    lines.append("=== 总览 ===")
+    lines.append(f"  总请求数: {summary['total_requests']}")
+    lines.append(f"  成功: {summary['total_success']}")
+    lines.append(f"  失败: {summary['total_errors']}")
+    lines.append(f"  错误率: {summary['overall_error_rate']}%")
+    lines.append(f"  吞吐量: {summary['throughput_per_min']} req/min")
+    lines.append("")
+
+    # 系统资源
+    sys_stats = stats["system"]
+    lines.append("=== 系统资源 ===")
+    for key, value in sys_stats.items():
+        if "mb" in key:
+            lines.append(f"  {key}: {value} MB")
+        elif "gb" in key:
+            lines.append(f"  {key}: {value} GB")
+        else:
+            lines.append(f"  {key}: {value}")
+    lines.append("")
+
+    # 各工具统计
+    lines.append("=== 工具统计 ===")
+    for tool_name, tool_stats in stats["tools"].items():
+        if tool_stats["total_requests"] == 0:
+            continue
+        lines.append(f"  [{tool_name}]")
+        lines.append(f"    请求: {tool_stats['total_requests']} (错误率 {tool_stats['error_rate']}%)")
+        lines.append(f"    响应: avg={tool_stats['avg_response_ms']}ms, p50={tool_stats['p50_response_ms']}ms, p99={tool_stats['p99_response_ms']}ms")
+    lines.append("")
+
+    # 告警检查
+    alerts = alert_manager.check(stats)
+    if alerts:
+        lines.append("=== 触发告警 ===")
+        for a in alerts:
+            lines.append(f"  [{a['severity'].upper()}] {a['message']}")
+    else:
+        lines.append("=== 告警: 无 ===")
+
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text="\n".join(lines))]
+    )
+
+
+async def handle_get_alerts(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """获取告警历史"""
+    history = alert_manager.get_history()
+
+    lines = [f"告警历史 (最近 {len(history)} 条):", ""]
+    if not history:
+        lines.append("  无告警记录")
+    else:
+        for a in history:
+            lines.append(f"  [{a['severity'].upper()}] {a['rule']}: {a['message']}")
+            lines.append(f"    时间: {a['timestamp']}")
+            lines.append("")
+
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text="\n".join(lines))]
+    )
+
+
+async def handle_get_config(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """获取当前配置"""
+    config = config_manager.to_dict()
+    errors = config_manager.validate()
+
+    lines = ["当前服务器配置:", ""]
+    for key, value in config.items():
+        lines.append(f"  {key}: {value}")
+
+    lines.append("")
+    if errors:
+        lines.append("⚠️ 配置验证问题:")
+        for e in errors:
+            lines.append(f"  - {e}")
+    else:
+        lines.append("✅ 配置验证通过")
+
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text="\n".join(lines))]
+    )
+
+
+async def handle_update_config(
+    arguments: Dict[str, Any],
+) -> types.CallToolResult:
+    """运行时更新配置"""
+    updates = arguments.get("config", {})
+    if not updates:
+        raise MCPError(ErrorCode.MISSING_PARAMS, detail="config 不能为空")
+
+    old_config = config_manager.to_dict()
+    config_manager.update(**updates)
+    new_config = config_manager.to_dict()
+    errors = config_manager.validate()
+
+    lines = ["配置已更新:", ""]
+    for key in updates:
+        if key in old_config:
+            lines.append(f"  {key}: {old_config[key]} → {new_config.get(key, 'N/A')}")
+
+    lines.append("")
+    if errors:
+        lines.append("⚠️ 配置验证问题:")
+        for e in errors:
+            lines.append(f"  - {e}")
+    else:
+        lines.append("✅ 配置验证通过")
+
+    logger.info("配置已热更新", {"updates": updates})
+
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text="\n".join(lines))]
+    )
+
+
+# ============================================================
 # 注册请求处理器
 # ============================================================
 
@@ -1516,6 +1734,8 @@ async def main():
         "tools": [t.name for t in TOOLS],
     })
 
+
+async def _run_server():
     async with stdio_server() as streams:
         await server.run(
             streams[0],
@@ -1524,10 +1744,6 @@ async def main():
         )
 
 
-if __name__ == "__main__":
-    import asyncio
-
-    asyncio.run(main())
 # ============== 第三阶段：高级文件操作处理器 ==============
 
 async def handle_compare_files(
@@ -2189,3 +2405,11 @@ async def handle_decompress_file(
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=details)]
     )
+
+
+# ============================================================
+# 启动入口（必须在所有handler定义之后）
+# ============================================================
+
+if __name__ == "__main__":
+    asyncio.run(_run_server())

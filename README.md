@@ -6,9 +6,11 @@
 
 - 🔒 **安全加固**：路径沙箱、RBAC权限、敏感文件守卫、操作审计
 - 📝 **结构化日志**：JSON分级日志 + 文件轮转 + SQLite审计追踪
-- ⚡ **29个工具**：批量操作、分块读取、缓存统计、高级文件操作
+- ⚡ **33个工具**：批量操作、分块读取、缓存统计、高级文件操作、可观测性
 - 🛡️ **安全防护**：自动阻止路径遍历、敏感文件访问、越权操作
-- 📊 **可观测性**：所有操作可追溯，含trace_id追踪
+- 📊 **可观测性**：健康检查端点、性能指标采集、告警系统、trace_id追踪
+- ⚙️ **配置管理**：dev/test/prod环境分离、配置验证、动态配置热更新
+- 🧪 **测试体系**：单元测试(47项)、集成测试(8项)、安全测试三层覆盖
 - 🚀 **性能优化**：LRU缓存、并发控制（最大20并发）、分块传输
 - 🔍 **高级搜索**：全文搜索、正则搜索、模糊搜索、索引搜索
 - 📁 **文件分析**：文件类型检测、编码检测、内容统计、重复检测
@@ -105,6 +107,15 @@ asyncio.run(test())
 | **`compress_file`** | 🆕 压缩单个文件（支持zip、gzip、bzip2格式） | 写入 |
 | **`decompress_file`** | 🆕 解压文件（支持zip、gzip、bzip2、tar格式） | 写入 |
 
+### 第四阶段：可观测性与配置管理
+| 工具 | 说明 | 安全等级 |
+|------|------|----------|
+| **`health_check`** | 🆕 服务健康状态检查（组件级状态） | 只读 |
+| **`get_metrics`** | 🆕 获取性能指标（响应时间/吞吐量/错误率） | 只读 |
+| **`get_alerts`** | 🆕 获取告警列表（异常操作实时告警） | 只读 |
+| **`get_config`** | 🆕 获取当前配置（dev/test/prod环境配置） | 只读 |
+| **`update_config`** | 🆕 动态更新配置（运行时热更新） | ⚠️ 危险 |
+
 ## 安全机制
 
 ```
@@ -157,8 +168,17 @@ mcp-project/
 │   │   ├── sensitive.py          # 敏感文件守卫
 │   │   ├── permissions.py        # RBAC权限控制
 │   │   ├── errors.py             # 结构化错误处理
-│   │   └── cache.py              # 🆕 LRU缓存管理
+│   │   ├── cache.py              # LRU缓存管理
+│   │   ├── advanced_operations.py # 高级文件操作（比较/合并/重命名）
+│   │   ├── search_enhancement.py # 增强搜索（全文/正则/模糊/索引）
+│   │   ├── file_analysis.py      # 文件分析（类型/编码/压缩）
+│   │   ├── observability.py      # 🆕 可观测性（MetricsCollector/HealthChecker/AlertManager）
+│   │   └── config.py             # 🆕 配置管理（ConfigManager/ServerConfig）
 │   └── __init__.py
+├── tests/                        # 🆕 测试体系
+│   ├── unit/                     # 单元测试（47项全通过）
+│   ├── integration/              # 集成测试（8项通过）
+│   └── security/                 # 安全测试
 ├── logs/                         # 运行时日志（gitignore）
 │   ├── filesystem-mcp.log
 │   └── audit.db
@@ -202,20 +222,22 @@ asyncio.run(main())
 
 ## 开发说明
 
-### 🎯 项目进度（2026-08-04）
+### 🎯 项目进度（V4.0 - 2026-08-04）
 
 | 阶段 | 状态 | 工具数量 | 主要成就 |
 |------|------|----------|----------|
 | **第一阶段** | ✅ 已完成 | 5→8个 | 安全加固、日志系统、错误处理 |
 | **第二阶段** | ✅ 已完成 | 8→12个 | 性能优化、缓存机制、大文件支持 |
 | **第三阶段** | ✅ 已完成 | 12→**29个** | 功能扩展、高级搜索、文件分析 |
-| **第四阶段** | 🔄 进行中 | 规划中 | 企业级特性、可观测性、测试体系 |
+| **第四阶段** | ✅ 已完成 | 29→**33个** | 可观测性、配置管理、测试体系 |
 
-### ✅ 第三阶段完成成果
-- **新增17个高级工具**（工具总数达29个）
-- **实现6大类功能**：高级文件操作、增强搜索、文件分析、索引管理、文件压缩
-- **完整安全集成**：所有新功能都经过沙箱、权限、敏感文件检查
-- **全面测试验证**：单元测试和集成测试全部通过
+### ✅ 第四阶段完成成果
+- **新增5个企业级工具**（工具总数从28增至33）：health_check、get_metrics、get_alerts、get_config、update_config
+- **新增2个服务模块**：`services/observability.py`（MetricsCollector/HealthChecker/AlertManager）、`services/config.py`（ConfigManager/ServerConfig）
+- **建立完整测试体系**：`tests/` 目录含 unit/integration/security 三层
+- **47个单元测试全部通过**，8项集成测试通过（5个新工具 + 3项回归测试）
+- **Bug修复**：修复 `server.py` 中 `if __name__` 块位置错误导致 Phase 3 handler 未加载的问题
+- **Bug修复**：修复 `observability.py` 中 `Lock` 死锁问题（改为 `RLock`）
 
 ### 📚 详细文档
 - [第三阶段实现文档](docs/phase3_implementation.md) - 详细技术实现
@@ -223,7 +245,7 @@ asyncio.run(main())
 - [功能扩展文档](docs/features.md) - 功能设计和实现指南
 - [项目路线图](docs/roadmap.md) - 后续开发计划
 
-后续将按 [roadmap.md](docs/roadmap.md) 进行第四阶段企业级特性开发。
+后续将按 [roadmap.md](docs/roadmap.md) 进行第五阶段生态集成开发。
 
 ## 许可证
 
