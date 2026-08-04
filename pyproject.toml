@@ -1,0 +1,20 @@
+[project]
+name = "mcp-project"
+version = "0.1.0"
+description = "文件系统MCP服务器 - 初学者友好的文件操作工具"
+readme = "README.md"
+authors = [
+    { name = "vvan汪汪队大队长", email = "whu13611614482@163.com" }
+]
+requires-python = ">=3.8"
+dependencies = [
+    "mcp>=1.0.0",
+    "typing-extensions>=4.0.0"
+]
+
+[project.scripts]
+mcp-project = "mcp_project:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"

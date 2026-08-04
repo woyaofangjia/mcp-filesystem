@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "filesystem-server": {
+      "command": "python",
+      "args": ["server.py"],
+      "env": {
+        "PYTHONPATH": ".",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "list_directory",
+        "read_file",
+        "get_file_info"
+      ]
+    }
+  }
+}

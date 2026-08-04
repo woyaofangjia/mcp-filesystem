@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+
+# Test artifacts
+test_files/
+example_test/
+test_output.txt
+quick_test.txt
+mcp_test_output.txt
+
+# Logs
+*.log
